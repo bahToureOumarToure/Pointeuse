@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pointeuse — suivi des heures de travail</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14181f">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pointeuse">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+  :root{
+    --bg:#14181f;
+    --surface:#1c222b;
+    --surface-2:#242b36;
+    --border:#2e3744;
+    --text:#ece7de;
+    --text-dim:#8a92a3;
+    --text-faint:#5c6577;
+    --brass:#c9885a;
+    --brass-light:#dca377;
+    --brass-soft:rgba(201,136,90,0.14);
+    --teal:#5fae9d;
+    --teal-soft:rgba(95,174,157,0.14);
+    --red:#c26356;
+    --red-soft:rgba(194,99,86,0.14);
+    --font-mono:'JetBrains Mono', monospace;
+    --font-sans:'Manrope', sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 600px 300px at 50% -10%, rgba(201,136,90,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--font-sans);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #app{
+    max-width:480px;
+    margin:0 auto;
+    padding:20px 16px 60px;
+    min-height:100vh;
+  }
+
+  .loading{
+    display:flex; align-items:center; justify-content:center;
+    height:80vh; color:var(--text-dim); font-family:var(--font-mono); font-size:13px;
+    letter-spacing:0.04em;
+  }
+
+  /* ---------- Header ---------- */
+  .header{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    margin-bottom:22px;
+  }
+  .header .brand{
+    font-family:var(--font-mono); font-size:13px; font-weight:700;
+    letter-spacing:0.18em; color:var(--brass-light); text-transform:uppercase;
+  }
+  .header .date-line{
+    margin-top:4px; font-size:13px; color:var(--text-dim); text-transform:capitalize;
+  }
+  .header .clock{
+    font-family:var(--font-mono); font-size:15px; color:var(--text-faint);
+    letter-spacing:0.04em; padding-top:2px;
+  }
+  .install-btn{
+    margin-top:8px; font-size:11px; font-weight:700; color:var(--brass-light);
+    background:var(--brass-soft); border:1px solid var(--brass);
+    padding:5px 10px; border-radius:20px; cursor:pointer; display:inline-block;
+  }
+
+  /* ---------- Hero / Punch card ---------- */
+  .hero{
+    background:linear-gradient(180deg, var(--surface) 0%, var(--surface) 100%);
+    border:1px solid var(--border);
+    border-radius:22px;
+    padding:28px 20px 26px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero::before{
+    content:'';
+    position:absolute; inset:0;
+    background-image:repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.018) 28px);
+    pointer-events:none;
+  }
+  .hero .status-label{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.14em;
+    text-transform:uppercase; color:var(--text-dim); position:relative;
+  }
+  .hero .status-label.active{ color:var(--teal); }
+  .hero .timer{
+    font-family:var(--font-mono); font-weight:700;
+    font-size:clamp(40px,12vw,52px);
+    margin:10px 0 2px;
+    color:var(--text);
+    font-variant-numeric:tabular-nums;
+    position:relative;
+  }
+  .hero .timer.active{ color:var(--teal); }
+  .hero .timer-sub{
+    font-size:12px; color:var(--text-faint); margin-bottom:22px; position:relative;
+  }
+
+  .punch-btn{
+    width:128px; height:128px; border-radius:50%;
+    margin:0 auto;
+    background:var(--surface-2);
+    border:3px solid var(--brass);
+    color:var(--text);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; position:relative; z-index:1;
+    font-family:var(--font-sans); font-weight:700; font-size:13px;
+    transition:transform .15s ease, box-shadow .25s ease, border-color .25s ease;
+    box-shadow:0 0 0 0 var(--brass-soft);
+  }
+  .punch-btn.active{
+    border-color:var(--teal);
+    box-shadow:0 0 0 10px var(--teal-soft);
+  }
+  .punch-btn:not(.active){
+    box-shadow:0 0 0 10px var(--brass-soft);
+  }
+  .punch-btn .ico{ font-size:22px; margin-bottom:6px; }
+  .punch-btn.stamping{ animation:stamp .32s ease; }
+  @keyframes stamp{
+    0%{transform:scale(1);}
+    35%{transform:scale(0.86);}
+    100%{transform:scale(1);}
+  }
+  .punch-hint{ margin-top:14px; font-size:12px; color:var(--text-faint); position:relative; }
+
+  /* ---------- Today list ---------- */
+  .today-card{
+    margin-top:14px; background:var(--surface); border:1px solid var(--border);
+    border-radius:16px; padding:16px 18px;
+  }
+  .today-card .row-title{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.1em;
+    color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;
+  }
+  .today-card .row-title b{ color:var(--text); font-family:var(--font-sans); font-size:14px; letter-spacing:0; }
+  .seg-line{
+    display:flex; justify-content:space-between; font-size:13px;
+    padding:7px 0; border-top:1px solid var(--border); color:var(--text-dim);
+  }
+  .seg-line:first-of-type{ border-top:none; }
+  .seg-line .dur{ color:var(--text); font-family:var(--font-mono); }
+  .seg-line .ongoing{ color:var(--teal); }
+
+  /* ---------- Period / synth card ---------- */
+  .period-card{
+    margin-top:14px; background:var(--surface); border:1px solid var(--border);
+    border-radius:16px; padding:16px 18px;
+  }
+  .tabs{ display:flex; gap:6px; margin-bottom:14px; }
+  .tab{
+    flex:1; text-align:center; padding:8px 4px; border-radius:10px;
+    font-size:12px; font-weight:600; cursor:pointer; color:var(--text-dim);
+    background:var(--surface-2); border:1px solid transparent; transition:all .15s ease;
+  }
+  .tab.sel{ background:var(--brass-soft); color:var(--brass-light); border-color:var(--brass); }
+  .period-label{ font-size:12.5px; color:var(--text-dim); margin-bottom:6px; }
+  .period-total{
+    font-family:var(--font-mono); font-weight:700; font-size:30px; color:var(--text);
+    font-variant-numeric:tabular-nums;
+  }
+  .period-note{ font-size:11.5px; color:var(--text-faint); margin-top:4px; }
+  .export-btn{
+    margin-top:14px; width:100%; padding:13px; border-radius:12px; border:1px solid var(--brass);
+    background:var(--brass-soft); color:var(--brass-light); font-weight:700; font-size:13.5px;
+    cursor:pointer; font-family:var(--font-sans); letter-spacing:0.02em;
+  }
+  .export-btn:active{ transform:scale(0.985); }
+
+  /* ---------- History ---------- */
+  .history-head{
+    display:flex; justify-content:space-between; align-items:center;
+    margin:26px 0 10px;
+  }
+  .history-head h2{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--text-dim); margin:0;
+  }
+  .add-link{
+    font-size:12px; color:var(--brass-light); cursor:pointer; font-weight:600;
+  }
+
+  .add-form{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:14px 16px; margin-bottom:12px;
+  }
+  .add-form .fields{ display:flex; gap:8px; margin-bottom:10px; }
+  .field{ flex:1; }
+  .field label{ display:block; font-size:10.5px; color:var(--text-faint); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.06em;}
+  .field input{
+    width:100%; background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); padding:8px; font-family:var(--font-mono); font-size:13px;
+  }
+  .field input:focus{ outline:none; border-color:var(--brass); }
+  .form-actions{ display:flex; gap:8px; }
+  .btn-sm{
+    flex:1; padding:9px; border-radius:9px; font-size:12.5px; font-weight:700; cursor:pointer;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text-dim);
+  }
+  .btn-sm.primary{ background:var(--brass-soft); border-color:var(--brass); color:var(--brass-light); }
+  .form-error{ color:var(--red); font-size:11.5px; margin-bottom:8px; }
+
+  .day-row{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    margin-bottom:8px; overflow:hidden;
+  }
+  .day-row .day-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:13px 16px; cursor:pointer;
+  }
+  .day-row .day-head .d-date{ font-size:13.5px; font-weight:600; text-transform:capitalize; }
+  .day-row .day-head .d-right{ display:flex; align-items:center; gap:10px; }
+  .day-row .day-head .d-total{ font-family:var(--font-mono); font-size:13.5px; color:var(--text-dim); }
+  .day-row .chevron{ width:14px; height:14px; color:var(--text-faint); transition:transform .2s ease; }
+  .day-row.open .chevron{ transform:rotate(180deg); }
+  .day-row .day-body{ padding:0 16px 14px; }
+  .sess-line{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 0; border-top:1px solid var(--border); font-size:13px;
+  }
+  .sess-line .s-times{ font-family:var(--font-mono); color:var(--text); }
+  .sess-line .s-times .arrow{ color:var(--text-faint); margin:0 4px; }
+  .sess-line .s-dur{ color:var(--text-dim); font-family:var(--font-mono); font-size:12.5px; }
+  .sess-line .s-actions{ display:flex; gap:10px; align-items:center; }
+  .icon-btn{ cursor:pointer; color:var(--text-faint); display:flex; }
+  .icon-btn:hover{ color:var(--brass-light); }
+  .icon-btn.danger:hover{ color:var(--red); }
+  .icon-btn svg{ width:15px; height:15px; }
+
+  .edit-row{
+    display:flex; gap:8px; align-items:flex-end; padding:10px 0; border-top:1px solid var(--border);
+  }
+  .edit-row .field input{ padding:7px; font-size:12.5px; }
+  .edit-row .actions{ display:flex; gap:6px; }
+  .mini-btn{
+    padding:7px 10px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text-dim);
+  }
+  .mini-btn.primary{ background:var(--teal-soft); border-color:var(--teal); color:var(--teal); }
+
+  .empty-state{
+    text-align:center; padding:34px 16px; color:var(--text-faint); font-size:13px; line-height:1.5;
+  }
+
+  .delete-confirm{ color:var(--red) !important; border-color:var(--red) !important; background:var(--red-soft) !important; }
+
+  .footer-actions{ margin-top:30px; text-align:center; }
+  .reset-link{ font-size:11.5px; color:var(--text-faint); cursor:pointer; }
+  .reset-link:hover{ color:var(--red); }
+
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 18px; border-radius:10px; font-size:13px; z-index:50;
+    box-shadow:0 8px 24px rgba(0,0,0,0.35);
+    animation:toastIn .2s ease;
+  }
+  @keyframes toastIn{ from{opacity:0; transform:translate(-50%,8px);} to{opacity:1; transform:translate(-50%,0);} }
+
+  @media (max-width:340px){
+    .punch-btn{ width:112px; height:112px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">Chargement…</div></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = 'pointeuse:sessions';
+  var sessions = [];           // {id, date:'YYYY-MM-DD', timeIn:'HH:MM', timeOut:'HH:MM'|null}
+  var storageOk = !!(window.storage && window.storage.get && window.storage.set);
+
+  var expandedDate = null;
+  var editingId = null;
+  var editVals = {timeIn:'', timeOut:''};
+  var confirmDeleteId = null;
+  var periodTab = 'semaine';
+  var showAddForm = false;
+  var addVals = {date:'', timeIn:'', timeOut:''};
+  var addError = '';
+  var deferredInstallPrompt = null;
+  var installAvailable = false;
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+  function dateKeyLocal(d){
+    d = d || new Date();
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  }
+  function nowHM(){ var d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); }
+  function toDateObj(dateStr, timeStr){ return new Date(dateStr+'T'+(timeStr||'00:00')+':00'); }
+
+  function durationMinutes(dateStr, timeIn, timeOut){
+    var a = toDateObj(dateStr, timeIn), b = toDateObj(dateStr, timeOut);
+    var diff = (b - a) / 60000;
+    if (diff < 0) diff += 1440;
+    return Math.round(diff);
+  }
+  function fmtH(mins){
+    mins = Math.max(0, Math.round(mins));
+    var h = Math.floor(mins/60), m = mins % 60;
+    return h+'h'+pad(m);
+  }
+  function capFirst(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+  function fmtDayLabel(dateStr){
+    var d = toDateObj(dateStr,'00:00');
+    var s = d.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric', month:'short'});
+    return capFirst(s.replace('.', ''));
+  }
+  function fmtDayFull(d){
+    return capFirst(d.toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}));
+  }
+  function fmtShort(d){
+    return d.toLocaleDateString('fr-FR', {day:'numeric', month:'short'});
+  }
+  function fmtShortYear(d){
+    return d.toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'});
+  }
+
+  // ---------- period ranges ----------
+  function startOfWeek(d){
+    var day = (d.getDay()+6)%7;
+    var s = new Date(d); s.setHours(0,0,0,0); s.setDate(d.getDate()-day);
+    return s;
+  }
+  function endOfWeek(d){ var s=startOfWeek(d); var e=new Date(s); e.setDate(s.getDate()+6); return e; }
+  function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+  function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+  function quinzaineRange(d){
+    if (d.getDate() <= 15) return [new Date(d.getFullYear(), d.getMonth(), 1), new Date(d.getFullYear(), d.getMonth(), 15)];
+    return [new Date(d.getFullYear(), d.getMonth(), 16), endOfMonth(d)];
+  }
+  function getRangeForTab(tab){
+    var now = new Date();
+    if (tab === 'jour') return [now, now];
+    if (tab === 'semaine') return [startOfWeek(now), endOfWeek(now)];
+    if (tab === 'quinzaine') return quinzaineRange(now);
+    return [startOfMonth(now), endOfMonth(now)];
+  }
+  function periodLabelFor(tab, range){
+    var now = new Date();
+    if (tab === 'jour') return "Aujourd'hui, "+fmtDayFull(now).split(' ').slice(1).join(' ');
+    if (tab === 'semaine') return 'Semaine du '+fmtShort(range[0])+' au '+fmtShortYear(range[1]);
+    if (tab === 'quinzaine') return 'Quinzaine du '+fmtShort(range[0])+' au '+fmtShortYear(range[1]);
+    return 'Mois de '+capFirst(now.toLocaleDateString('fr-FR',{month:'long', year:'numeric'}));
+  }
+
+  // ---------- derived data ----------
+  function activeSession(){
+    for (var i=0;i<sessions.length;i++) if (sessions[i].timeOut === null) return sessions[i];
+    return null;
+  }
+  function dayKeysSorted(desc){
+    var set = {};
+    sessions.forEach(function(s){ set[s.date] = true; });
+    var keys = Object.keys(set).sort();
+    if (desc) keys.reverse();
+    return keys;
+  }
+  function sessionsForDay(dateStr){
+    return sessions.filter(function(s){ return s.date === dateStr; })
+      .sort(function(a,b){ return a.timeIn.localeCompare(b.timeIn); });
+  }
+  function dayTotalMinutes(dateStr){
+    var total = 0;
+    sessionsForDay(dateStr).forEach(function(s){
+      if (s.timeOut) total += durationMinutes(dateStr, s.timeIn, s.timeOut);
+    });
+    return total;
+  }
+  function rangeHasOngoing(range){
+    var a = activeSession();
+    if (!a) return false;
+    var k = a.date;
+    return k >= dateKeyLocal(range[0]) && k <= dateKeyLocal(range[1]);
+  }
+  function rangeTotalMinutes(range){
+    var startK = dateKeyLocal(range[0]), endK = dateKeyLocal(range[1]);
+    var total = 0;
+    dayKeysSorted(false).forEach(function(k){
+      if (k >= startK && k <= endK) total += dayTotalMinutes(k);
+    });
+    return total;
+  }
+  function todayLiveMinutes(){
+    var todayKey = dateKeyLocal();
+    var total = dayTotalMinutes(todayKey);
+    var a = activeSession();
+    if (a && a.date === todayKey){
+      total += Math.round((Date.now() - toDateObj(a.date, a.timeIn).getTime())/60000);
+    }
+    return total;
+  }
+
+  // ---------- persistence ----------
+  function save(){
+    if (!storageOk) return;
+    window.storage.set(STORAGE_KEY, JSON.stringify(sessions), false).catch(function(e){
+      console.error('Erreur de sauvegarde', e);
+      toast("Échec de l'enregistrement local");
+    });
+  }
+  function load(){
+    if (!storageOk){ sessions = []; renderApp(); return; }
+    window.storage.get(STORAGE_KEY, false).then(function(res){
+      try{ sessions = res && res.value ? JSON.parse(res.value) : []; }
+      catch(e){ sessions = []; }
+      renderApp();
+    }).catch(function(){
+      sessions = [];
+      renderApp();
+    });
+  }
+
+  // ---------- toast ----------
+  var toastTimer = null;
+  function toast(msg){
+    var el = document.getElementById('toast');
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.id = 'toast'; el.className = 'toast'; el.textContent = msg;
+    document.body.appendChild(el);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.remove(); }, 2600);
+  }
+
+  // ---------- actions ----------
+  window.doPunch = function(){
+    var a = activeSession();
+    var btn = document.getElementById('punchBtn');
+    if (btn){ btn.classList.add('stamping'); setTimeout(function(){ btn.classList.remove('stamping'); }, 320); }
+    if (a){
+      a.timeOut = nowHM();
+    } else {
+      sessions.push({ id: uid(), date: dateKeyLocal(), timeIn: nowHM(), timeOut: null });
+    }
+    save();
+    renderApp();
+  };
+
+  window.toggleDay = function(dateStr){
+    expandedDate = (expandedDate === dateStr) ? null : dateStr;
+    editingId = null; confirmDeleteId = null;
+    renderApp();
+  };
+
+  window.startEdit = function(id){
+    var s = sessions.find(function(x){ return x.id === id; });
+    if (!s) return;
+    editingId = id;
+    editVals = { timeIn: s.timeIn, timeOut: s.timeOut || '' };
+    confirmDeleteId = null;
+    renderApp();
+    var el = document.getElementById('edit-in-'+id);
+    if (el) el.focus();
+  };
+  window.cancelEdit = function(){ editingId = null; renderApp(); };
+  window.setEditVal = function(field, val){ editVals[field] = val; };
+  window.saveEdit = function(id){
+    var s = sessions.find(function(x){ return x.id === id; });
+    if (!s) return;
+    var ti = document.getElementById('edit-in-'+id).value;
+    var to = document.getElementById('edit-out-'+id).value;
+    if (!ti){ toast("L'heure d'arrivée est requise"); return; }
+    s.timeIn = ti;
+    s.timeOut = to ? to : null;
+    editingId = null;
+    save();
+    renderApp();
+  };
+
+  window.askDelete = function(id){
+    if (confirmDeleteId === id){
+      sessions = sessions.filter(function(x){ return x.id !== id; });
+      confirmDeleteId = null;
+      save();
+      renderApp();
+    } else {
+      confirmDeleteId = id;
+      renderApp();
+      setTimeout(function(){
+        if (confirmDeleteId === id){ confirmDeleteId = null; renderApp(); }
+      }, 3000);
+    }
+  };
+
+  window.selectTab = function(tab){ periodTab = tab; renderApp(); };
+
+  window.toggleAddForm = function(){
+    showAddForm = !showAddForm;
+    addError = '';
+    if (showAddForm) addVals = { date: dateKeyLocal(), timeIn: '', timeOut: '' };
+    renderApp();
+    if (showAddForm){ var el = document.getElementById('add-date'); if (el) el.focus(); }
+  };
+  window.submitAdd = function(){
+    var date = document.getElementById('add-date').value;
+    var ti = document.getElementById('add-in').value;
+    var to = document.getElementById('add-out').value;
+    if (!date || !ti || !to){ addError = 'Merci de renseigner la date, l\'arrivée et le départ.'; renderApp(); return; }
+    sessions.push({ id: uid(), date: date, timeIn: ti, timeOut: to });
+    showAddForm = false; addError = '';
+    expandedDate = date;
+    save();
+    renderApp();
+  };
+
+  window.resetAll = function(){
+    if (confirmDeleteId === 'RESET_ALL'){
+      sessions = [];
+      confirmDeleteId = null;
+      save();
+      renderApp();
+      toast('Historique effacé');
+    } else {
+      confirmDeleteId = 'RESET_ALL';
+      renderApp();
+      setTimeout(function(){ if (confirmDeleteId==='RESET_ALL'){ confirmDeleteId=null; renderApp(); } }, 3000);
+    }
+  };
+
+  // ---------- installation PWA ----------
+  window.installApp = function(){
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(function(){
+      deferredInstallPrompt = null;
+      installAvailable = false;
+      renderApp();
+    });
+  };
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    installAvailable = true;
+    renderApp();
+  });
+  window.addEventListener('appinstalled', function(){
+    deferredInstallPrompt = null;
+    installAvailable = false;
+    renderApp();
+    toast('Pointeuse est installée');
+  });
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(e){
+        console.log('Service worker non disponible (normal en local sans hébergement HTTPS) :', e);
+      });
+    });
+  }
+
+  // ---------- PDF export ----------
+  window.exportPdf = function(){
+    if (!window.jspdf){ toast("Le module PDF n'a pas pu se charger"); return; }
+    var range = getRangeForTab(periodTab);
+    var startK = dateKeyLocal(range[0]), endK = dateKeyLocal(range[1]);
+    var days = dayKeysSorted(false).filter(function(k){ return k >= startK && k <= endK; });
+
+    var jsPDFCtor = window.jspdf.jsPDF;
+    var doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+    var marginX = 48, pageBottom = 770, y = 64;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(19); doc.setTextColor(28,34,43);
+    doc.text('Pointeuse — Synthèse des heures travaillées', marginX, y);
+    y += 24;
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(110,116,128);
+    doc.text('Période : ' + periodLabelFor(periodTab, range), marginX, y);
+    y += 28;
+
+    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 16;
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(28,34,43);
+    doc.text('DATE', marginX, y);
+    doc.text('ARRIVÉE', marginX+165, y);
+    doc.text('DÉPART', marginX+245, y);
+    doc.text('DURÉE', marginX+330, y);
+    y += 8;
+    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 16;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+
+    var grandTotal = 0;
+    if (days.length === 0){
+      doc.setTextColor(140,146,160);
+      doc.text('Aucune session enregistrée sur cette période.', marginX, y);
+      y += 18;
+    }
+    days.forEach(function(dateStr){
+      var list = sessionsForDay(dateStr);
+      list.forEach(function(s, idx){
+        if (y > pageBottom){ doc.addPage(); y = 64; }
+        doc.setTextColor(28,34,43);
+        doc.text(idx === 0 ? fmtDayLabel(dateStr) : '', marginX, y);
+        doc.text(s.timeIn, marginX+165, y);
+        doc.text(s.timeOut || '—', marginX+245, y);
+        var mins = s.timeOut ? durationMinutes(dateStr, s.timeIn, s.timeOut) : 0;
+        doc.text(s.timeOut ? fmtH(mins) : 'en cours', marginX+330, y);
+        y += 17;
+      });
+      var dTotal = dayTotalMinutes(dateStr);
+      grandTotal += dTotal;
+      doc.setTextColor(150,156,168); doc.setFontSize(8.5);
+      doc.text('Total du jour : ' + fmtH(dTotal), marginX+330, y);
+      doc.setFontSize(10);
+      y += 16;
+    });
+
+    if (y > pageBottom - 40){ doc.addPage(); y = 64; }
+    y += 8;
+    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 24;
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(28,34,43);
+    doc.text('Total période : ' + fmtH(grandTotal), marginX, y);
+
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(170,170,170);
+    var genLine = 'Généré le ' + new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}) + ' à ' + nowHM() + ' — Pointeuse';
+    doc.text(genLine, marginX, 812);
+
+    doc.save('synthese-heures_' + startK + '_au_' + endK + '.pdf');
+    toast('PDF généré');
+  };
+
+  // ---------- icons ----------
+  var ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+  var ICON_CHEV = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+  // ---------- render ----------
+  function renderApp(){
+    var app = document.getElementById('app');
+    var now = new Date();
+    var a = activeSession();
+    var todayMins = todayLiveMinutes();
+
+    var html = '';
+
+    // header
+    html += '<div class="header">';
+    html += '<div><div class="brand">Pointeuse</div><div class="date-line">'+fmtDayFull(now)+'</div></div>';
+    html += '<div style="text-align:right;">';
+    html += '<div class="clock" id="headerClock">'+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds())+'</div>';
+    if (installAvailable){
+      html += '<div class="install-btn" onclick="installApp()">Installer l\'app</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    // hero
+    html += '<div class="hero">';
+    if (a){
+      html += '<div class="status-label active">EN POSTE DEPUIS '+a.timeIn+'</div>';
+      html += '<div class="timer active" id="heroTimer">'+fmtH(todayMins)+'</div>';
+      html += '<div class="timer-sub">cumul du jour, mise à jour en direct</div>';
+    } else {
+      html += '<div class="status-label">PRÊT À POINTER</div>';
+      html += '<div class="timer" id="heroTimer">'+fmtH(todayMins)+'</div>';
+      html += '<div class="timer-sub">'+(todayMins>0 ? 'travaillé aujourd\'hui' : "rien d'enregistré pour l'instant")+'</div>';
+    }
+    html += '<div class="punch-btn'+(a?' active':'')+'" id="punchBtn" onclick="doPunch()">';
+    html += '<div class="ico">'+(a?'■':'●')+'</div>';
+    html += '<div>'+(a?"Pointer<br>le départ":"Pointer<br>l'arrivée")+'</div>';
+    html += '</div>';
+    html += '<div class="punch-hint">'+(a? "L'heure de départ sera enregistrée à la minute près" : "L'heure d'arrivée sera enregistrée à la minute près")+'</div>';
+    html += '</div>';
+
+    // today detail
+    var todayKey = dateKeyLocal();
+    var todayList = sessionsForDay(todayKey);
+    if (todayList.length){
+      html += '<div class="today-card">';
+      html += '<div class="row-title"><span>Sessions du jour</span><b>'+fmtH(todayMins)+'</b></div>';
+      todayList.forEach(function(s){
+        var dur = s.timeOut ? fmtH(durationMinutes(todayKey, s.timeIn, s.timeOut)) : '';
+        html += '<div class="seg-line"><span>'+s.timeIn+' → '+(s.timeOut||'…')+'</span>';
+        html += s.timeOut ? '<span class="dur">'+dur+'</span>' : '<span class="dur ongoing">en cours</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // period / export card
+    var tabs = [['jour','Jour'],['semaine','Semaine'],['quinzaine','Quinzaine'],['mois','Mois']];
+    var range = getRangeForTab(periodTab);
+    var periodTotal = rangeTotalMinutes(range);
+    html += '<div class="period-card">';
+    html += '<div class="tabs">';
+    tabs.forEach(function(t){
+      html += '<div class="tab'+(periodTab===t[0]?' sel':'')+'" onclick="selectTab(\''+t[0]+'\')">'+t[1]+'</div>';
+    });
+    html += '</div>';
+    html += '<div class="period-label">'+periodLabelFor(periodTab, range)+'</div>';
+    html += '<div class="period-total">'+fmtH(periodTotal)+'</div>';
+    if (rangeHasOngoing(range)) html += '<div class="period-note">+ session en cours non comptabilisée</div>';
+    html += '<div class="export-btn" onclick="exportPdf()">Exporter la synthèse en PDF</div>';
+    html += '</div>';
+
+    // history header
+    html += '<div class="history-head"><h2>Historique</h2><div class="add-link" onclick="toggleAddForm()">'+(showAddForm?'Annuler':'+ Ajouter une session')+'</div></div>';
+
+    if (showAddForm){
+      html += '<div class="add-form">';
+      if (addError) html += '<div class="form-error">'+addError+'</div>';
+      html += '<div class="fields">';
+      html += '<div class="field"><label>Date</label><input id="add-date" type="date" value="'+addVals.date+'"></div>';
+      html += '<div class="field"><label>Arrivée</label><input id="add-in" type="time" value="'+addVals.timeIn+'"></div>';
+      html += '<div class="field"><label>Départ</label><input id="add-out" type="time" value="'+addVals.timeOut+'"></div>';
+      html += '</div>';
+      html += '<div class="form-actions">';
+      html += '<div class="btn-sm" onclick="toggleAddForm()">Annuler</div>';
+      html += '<div class="btn-sm primary" onclick="submitAdd()">Enregistrer</div>';
+      html += '</div></div>';
+    }
+
+    var keys = dayKeysSorted(true);
+    if (keys.length === 0 && !showAddForm){
+      html += '<div class="empty-state">Aucun historique pour l\'instant.<br>Pointez votre arrivée pour commencer, ou ajoutez une session passée.</div>';
+    } else {
+      keys.forEach(function(k){
+        var list = sessionsForDay(k);
+        var total = dayTotalMinutes(k);
+        var open = expandedDate === k;
+        html += '<div class="day-row'+(open?' open':'')+'">';
+        html += '<div class="day-head" onclick="toggleDay(\''+k+'\')">';
+        html += '<span class="d-date">'+fmtDayLabel(k)+'</span>';
+        html += '<span class="d-right"><span class="d-total">'+fmtH(total)+'</span>'+ICON_CHEV+'</span>';
+        html += '</div>';
+        if (open){
+          html += '<div class="day-body">';
+          list.forEach(function(s){
+            if (editingId === s.id){
+              html += '<div class="edit-row">';
+              html += '<div class="field"><label>Arrivée</label><input id="edit-in-'+s.id+'" type="time" value="'+editVals.timeIn+'"></div>';
+              html += '<div class="field"><label>Départ</label><input id="edit-out-'+s.id+'" type="time" value="'+editVals.timeOut+'"></div>';
+              html += '<div class="actions">';
+              html += '<div class="mini-btn" onclick="cancelEdit()">Annuler</div>';
+              html += '<div class="mini-btn primary" onclick="saveEdit(\''+s.id+'\')">OK</div>';
+              html += '</div></div>';
+            } else {
+              var dur = s.timeOut ? fmtH(durationMinutes(k, s.timeIn, s.timeOut)) : 'en cours';
+              html += '<div class="sess-line">';
+              html += '<span class="s-times">'+s.timeIn+'<span class="arrow">→</span>'+(s.timeOut||'…')+'</span>';
+              html += '<span class="s-actions"><span class="s-dur">'+dur+'</span>';
+              html += '<span class="icon-btn" onclick="startEdit(\''+s.id+'\')">'+ICON_PENCIL+'</span>';
+              html += '<span class="icon-btn danger" onclick="askDelete(\''+s.id+'\')" style="'+(confirmDeleteId===s.id?'color:var(--red)':'')+'">'+ICON_TRASH+'</span>';
+              html += '</span></div>';
+              if (confirmDeleteId === s.id){
+                html += '<div style="font-size:11px;color:var(--red);padding:2px 0 6px;">Cliquez à nouveau sur la corbeille pour confirmer la suppression</div>';
+              }
+            }
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+    }
+
+    html += '<div class="footer-actions"><span class="reset-link" onclick="resetAll()">'+(confirmDeleteId==='RESET_ALL' ? 'Confirmer l\'effacement de tout l\'historique ?' : 'Effacer tout l\'historique')+'</span></div>';
+
+    app.innerHTML = html;
+  }
+
+  // lightweight per-second tick (header clock + hero timer) without full re-render
+  setInterval(function(){
+    var clockEl = document.getElementById('headerClock');
+    if (clockEl){
+      var n = new Date();
+      clockEl.textContent = pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds());
+    }
+    var timerEl = document.getElementById('heroTimer');
+    if (timerEl && activeSession()){
+      timerEl.textContent = fmtH(todayLiveMinutes());
+    }
+  }, 1000);
+
+  load();
+})();
+</script>
+</body>
+</html>
