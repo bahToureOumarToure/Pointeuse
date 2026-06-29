@@ -268,6 +268,10 @@
   .delete-confirm{ color:var(--red) !important; border-color:var(--red) !important; background:var(--red-soft) !important; }
 
   .footer-actions{ margin-top:30px; text-align:center; }
+  .backup-actions{ display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
+  .backup-link{ font-size:12px; color:var(--brass-light); cursor:pointer; font-weight:600; }
+  .backup-link:hover{ color:var(--brass); }
+  .backup-sep{ color:var(--text-faint); }
   .reset-link{ font-size:11.5px; color:var(--text-faint); cursor:pointer; }
   .reset-link:hover{ color:var(--red); }
 
@@ -294,7 +298,19 @@
 
   var STORAGE_KEY = 'pointeuse:sessions';
   var sessions = [];           // {id, date:'YYYY-MM-DD', timeIn:'HH:MM', timeOut:'HH:MM'|null}
-  var storageOk = !!(window.storage && window.storage.get && window.storage.set);
+
+  // Vérifie que localStorage est réellement utilisable (peut être bloqué en
+  // navigation privée sur certains navigateurs).
+  var storageOk = (function(){
+    try{
+      var k = '__pointeuse_test__';
+      window.localStorage.setItem(k, '1');
+      window.localStorage.removeItem(k);
+      return true;
+    }catch(e){
+      return false;
+    }
+  })();
 
   var expandedDate = null;
   var editingId = null;
@@ -420,24 +436,31 @@
     return total;
   }
 
-  // ---------- persistence ----------
+  // ---------- persistence (localStorage) ----------
+  // localStorage est partagé entre le navigateur et la PWA installée pour un
+  // même site (même origine), et survit à la fermeture de l'app / du téléphone.
   function save(){
-    if (!storageOk) return;
-    window.storage.set(STORAGE_KEY, JSON.stringify(sessions), false).catch(function(e){
+    if (!storageOk){ toast("Stockage indisponible (navigation privée ?)"); return; }
+    try{
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    }catch(e){
       console.error('Erreur de sauvegarde', e);
       toast("Échec de l'enregistrement local");
-    });
+    }
   }
   function load(){
-    if (!storageOk){ sessions = []; renderApp(); return; }
-    window.storage.get(STORAGE_KEY, false).then(function(res){
-      try{ sessions = res && res.value ? JSON.parse(res.value) : []; }
-      catch(e){ sessions = []; }
-      renderApp();
-    }).catch(function(){
+    if (storageOk){
+      try{
+        var raw = window.localStorage.getItem(STORAGE_KEY);
+        sessions = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(sessions)) sessions = [];
+      }catch(e){
+        sessions = [];
+      }
+    } else {
       sessions = [];
-      renderApp();
-    });
+    }
+    renderApp();
   }
 
   // ---------- toast ----------
@@ -545,6 +568,60 @@
       renderApp();
       setTimeout(function(){ if (confirmDeleteId==='RESET_ALL'){ confirmDeleteId=null; renderApp(); } }, 3000);
     }
+  };
+
+  // ---------- sauvegarde / transfert (export & import JSON) ----------
+  // Permet de transférer manuellement les données vers un autre appareil :
+  // on exporte un fichier .json puis on l'importe sur l'autre téléphone/PC.
+  window.exportData = function(){
+    try{
+      var payload = JSON.stringify({ app:'pointeuse', version:1, exportedAt:new Date().toISOString(), sessions:sessions }, null, 2);
+      var blob = new Blob([payload], { type:'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'pointeuse-sauvegarde_' + dateKeyLocal() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      toast('Sauvegarde exportée');
+    }catch(e){
+      toast("Échec de l'export");
+    }
+  };
+
+  window.importData = function(){
+    var input = document.getElementById('importFile');
+    if (input) input.click();
+  };
+  window.handleImportFile = function(inputEl){
+    var file = inputEl.files && inputEl.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var data = JSON.parse(reader.result);
+        var incoming = Array.isArray(data) ? data : (data && data.sessions);
+        if (!Array.isArray(incoming)) throw new Error('format');
+        // Fusionne avec l'existant en évitant les doublons (par id).
+        var byId = {};
+        sessions.forEach(function(s){ byId[s.id] = s; });
+        var added = 0;
+        incoming.forEach(function(s){
+          if (s && s.id && s.date && s.timeIn && !byId[s.id]){
+            byId[s.id] = s; sessions.push(s); added++;
+          }
+        });
+        save();
+        renderApp();
+        toast(added > 0 ? (added + ' session(s) importée(s)') : 'Aucune nouvelle session');
+      }catch(e){
+        toast('Fichier de sauvegarde invalide');
+      }
+      inputEl.value = '';
+    };
+    reader.readAsText(file);
   };
 
   // ---------- installation PWA ----------
@@ -779,7 +856,15 @@
       });
     }
 
-    html += '<div class="footer-actions"><span class="reset-link" onclick="resetAll()">'+(confirmDeleteId==='RESET_ALL' ? 'Confirmer l\'effacement de tout l\'historique ?' : 'Effacer tout l\'historique')+'</span></div>';
+    html += '<div class="footer-actions">';
+    html += '<div class="backup-actions">';
+    html += '<span class="backup-link" onclick="exportData()">↓ Exporter ma sauvegarde</span>';
+    html += '<span class="backup-sep">·</span>';
+    html += '<span class="backup-link" onclick="importData()">↑ Importer une sauvegarde</span>';
+    html += '</div>';
+    html += '<input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="handleImportFile(this)">';
+    html += '<div style="margin-top:14px;"><span class="reset-link" onclick="resetAll()">'+(confirmDeleteId==='RESET_ALL' ? 'Confirmer l\'effacement de tout l\'historique ?' : 'Effacer tout l\'historique')+'</span></div>';
+    html += '</div>';
 
     app.innerHTML = html;
   }
