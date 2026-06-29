@@ -655,72 +655,145 @@
   }
 
   // ---------- PDF export ----------
+  // Coordonnées de l'auteur affichées en en-tête du document.
+  var AUTHOR = {
+    name: 'Bah Oumar Touré',
+    role: 'Élève Ingénieur en Ingénierie Informatique et IA',
+    school: "École Nationale de l'Intelligence Artificielle et du Digital (ENIAD), Berkane, Maroc",
+    phone: '+212 705107686',
+    email: 'o.t.bahtoure@gmail.com',
+    portfolio: 'bahoumartoure.com',
+    github: 'github.com/bahToureOumarToure',
+    linkedin: 'linkedin.com/in/bahoumartoure'
+  };
+
+  // Le logo est chargé une seule fois, redimensionné, puis mis en cache pour
+  // garder le PDF léger.
+  var _logoData;
+  function withLogo(cb){
+    if (_logoData !== undefined){ cb(_logoData); return; }
+    var img = new Image();
+    img.onload = function(){
+      try{
+        var size = 240;
+        var c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        c.getContext('2d').drawImage(img, 0, 0, size, size);
+        _logoData = c.toDataURL('image/png');
+      }catch(e){ _logoData = ''; }
+      cb(_logoData);
+    };
+    img.onerror = function(){ _logoData = ''; cb(''); };
+    img.src = 'icon-512.png';
+  }
+
   window.exportPdf = function(){
     if (!window.jspdf){ toast("Le module PDF n'a pas pu se charger"); return; }
+    withLogo(function(logo){ buildPdf(logo); });
+  };
+
+  function buildPdf(logo){
     var range = getRangeForTab(periodTab);
     var startK = dateKeyLocal(range[0]), endK = dateKeyLocal(range[1]);
     var days = dayKeysSorted(false).filter(function(k){ return k >= startK && k <= endK; });
 
     var jsPDFCtor = window.jspdf.jsPDF;
     var doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
-    var marginX = 48, pageBottom = 770, y = 64;
+    var marginX = 48, rightX = 548, pageBottom = 760;
 
-    doc.setFont('helvetica','bold'); doc.setFontSize(19); doc.setTextColor(28,34,43);
-    doc.text('Pointeuse — Synthèse des heures travaillées', marginX, y);
-    y += 24;
-    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(110,116,128);
+    // couleurs
+    var ink = [28, 34, 43], dim = [110, 116, 128], faint = [150, 156, 168], brass = [201, 136, 90];
+
+    // colonnes
+    var colDate = marginX, colIn = 252, colOut = 350;
+
+    // ----- en-tête : identité + logo -----
+    if (logo){
+      try{ doc.addImage(logo, 'PNG', marginX, 40, 54, 54); }catch(e){}
+    }
+    var tx = marginX + 70;
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor.apply(doc, ink);
+    doc.text(AUTHOR.name, tx, 56);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, dim);
+    doc.text(AUTHOR.role, tx, 70);
+    doc.setFontSize(8.5);
+    doc.text(AUTHOR.school, tx, 82);
+    doc.text('Tél. : ' + AUTHOR.phone + '   ·   ' + AUTHOR.email, tx, 94);
+    doc.text(AUTHOR.portfolio + '   ·   ' + AUTHOR.github + '   ·   ' + AUTHOR.linkedin, tx, 106);
+
+    var y = 128;
+    doc.setDrawColor(225); doc.setLineWidth(0.8); doc.line(marginX, y, rightX, y);
+    y += 30;
+
+    // ----- titre du relevé -----
+    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor.apply(doc, ink);
+    doc.text('Relevé des heures de travail', marginX, y);
+    y += 18;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor.apply(doc, dim);
     doc.text('Période : ' + periodLabelFor(periodTab, range), marginX, y);
-    y += 28;
+    y += 26;
 
-    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 16;
-    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(28,34,43);
-    doc.text('DATE', marginX, y);
-    doc.text('ARRIVÉE', marginX+165, y);
-    doc.text('DÉPART', marginX+245, y);
-    doc.text('DURÉE', marginX+330, y);
-    y += 8;
-    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 16;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    // ----- en-têtes de colonnes -----
+    function drawTableHead(){
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, faint);
+      doc.text('DATE', colDate, y);
+      doc.text('ARRIVÉE', colIn, y);
+      doc.text('DÉPART', colOut, y);
+      doc.text('DURÉE', rightX, y, { align: 'right' });
+      y += 7;
+      doc.setDrawColor(225); doc.setLineWidth(0.6); doc.line(marginX, y, rightX, y);
+      y += 16;
+      doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    }
+    drawTableHead();
 
     var grandTotal = 0;
     if (days.length === 0){
-      doc.setTextColor(140,146,160);
-      doc.text('Aucune session enregistrée sur cette période.', marginX, y);
+      doc.setTextColor.apply(doc, faint);
+      doc.text('Aucune session enregistrée sur cette période.', colDate, y);
       y += 18;
     }
     days.forEach(function(dateStr){
       var list = sessionsForDay(dateStr);
       list.forEach(function(s, idx){
-        if (y > pageBottom){ doc.addPage(); y = 64; }
-        doc.setTextColor(28,34,43);
-        doc.text(idx === 0 ? fmtDayLabel(dateStr) : '', marginX, y);
-        doc.text(s.timeIn, marginX+165, y);
-        doc.text(s.timeOut || '—', marginX+245, y);
-        var mins = s.timeOut ? durationMinutes(dateStr, s.timeIn, s.timeOut) : 0;
-        doc.text(s.timeOut ? fmtH(mins) : 'en cours', marginX+330, y);
+        if (y > pageBottom){ doc.addPage(); y = 64; drawTableHead(); }
+        doc.setTextColor.apply(doc, ink);
+        doc.text(idx === 0 ? fmtDayLabel(dateStr) : '', colDate, y);
+        doc.text(s.timeIn, colIn, y);
+        doc.text(s.timeOut || '', colOut, y);
+        if (s.timeOut){
+          doc.text(fmtH(durationMinutes(dateStr, s.timeIn, s.timeOut)), rightX, y, { align: 'right' });
+        } else {
+          doc.setTextColor.apply(doc, dim);
+          doc.text('en cours', rightX, y, { align: 'right' });
+          doc.setTextColor.apply(doc, ink);
+        }
         y += 17;
       });
       var dTotal = dayTotalMinutes(dateStr);
       grandTotal += dTotal;
-      doc.setTextColor(150,156,168); doc.setFontSize(8.5);
-      doc.text('Total du jour : ' + fmtH(dTotal), marginX+330, y);
+      doc.setTextColor.apply(doc, faint); doc.setFontSize(8.5);
+      doc.text('Total du jour : ' + fmtH(dTotal), rightX, y, { align: 'right' });
       doc.setFontSize(10);
-      y += 16;
+      y += 18;
     });
 
-    if (y > pageBottom - 40){ doc.addPage(); y = 64; }
-    y += 8;
-    doc.setDrawColor(225); doc.line(marginX, y, 548, y); y += 24;
-    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(28,34,43);
-    doc.text('Total période : ' + fmtH(grandTotal), marginX, y);
+    if (y > pageBottom - 50){ doc.addPage(); y = 64; }
+    y += 6;
+    doc.setDrawColor(225); doc.setLineWidth(0.8); doc.line(marginX, y, rightX, y);
+    y += 26;
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, brass);
+    doc.text('Total de la période', colDate, y);
+    doc.text(fmtH(grandTotal), rightX, y, { align: 'right' });
 
+    // ----- pied de page -----
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(170,170,170);
-    var genLine = 'Généré le ' + new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}) + ' à ' + nowHM() + ' — Pointeuse';
+    var genLine = 'Document généré le ' + new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}) + ' à ' + nowHM() + ', via l\'application Pointeuse.';
     doc.text(genLine, marginX, 812);
 
-    doc.save('synthese-heures_' + startK + '_au_' + endK + '.pdf');
+    doc.save('releve-heures_' + startK + '_au_' + endK + '.pdf');
     toast('PDF généré');
-  };
+  }
 
   // ---------- icons ----------
   var ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
