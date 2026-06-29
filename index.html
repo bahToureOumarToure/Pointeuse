@@ -667,6 +667,44 @@
     linkedin: 'linkedin.com/in/bahoumartoure'
   };
 
+  // Icônes officielles des plateformes (tracés vectoriels). Les logos de marque
+  // (GitHub, LinkedIn, Gmail) proviennent de Simple Icons ; le téléphone et le
+  // globe de Lucide. Rendus en haute résolution puis embarqués → toujours nets.
+  var ICONS = {
+    phone:    { type:'stroke', color:[90,98,112],
+      paths:['M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384'] },
+    gmail:    { type:'fill', color:[234,67,53],
+      paths:['M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z'] },
+    globe:    { type:'stroke', color:[90,98,112], circles:[[12,12,10]],
+      paths:['M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20','M2 12h20'] },
+    github:   { type:'fill', color:[24,23,23],
+      paths:['M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'] },
+    linkedin: { type:'fill', color:[10,102,194],
+      paths:['M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z'] }
+  };
+  var _iconCache = {};
+  function renderIcon(name){
+    if (_iconCache[name]) return _iconCache[name];
+    var spec = ICONS[name];
+    var S = 96; // rendu haute résolution pour un PDF net
+    var c = document.createElement('canvas'); c.width = S; c.height = S;
+    var ctx = c.getContext('2d');
+    ctx.scale(S/24, S/24);
+    if (spec.type === 'fill'){
+      ctx.fillStyle = 'rgb('+spec.color.join(',')+')';
+      spec.paths.forEach(function(d){ ctx.fill(new Path2D(d)); });
+    } else {
+      ctx.strokeStyle = 'rgb('+spec.color.join(',')+')';
+      ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      (spec.circles||[]).forEach(function(cc){ ctx.beginPath(); ctx.arc(cc[0],cc[1],cc[2],0,Math.PI*2); ctx.stroke(); });
+      (spec.paths||[]).forEach(function(d){ ctx.stroke(new Path2D(d)); });
+    }
+    var url = '';
+    try{ url = c.toDataURL('image/png'); }catch(e){}
+    _iconCache[name] = url;
+    return url;
+  }
+
   // Le logo est chargé une seule fois, redimensionné, puis mis en cache pour
   // garder le PDF léger.
   var _logoData;
@@ -702,26 +740,46 @@
     var marginX = 48, rightX = 548, pageBottom = 760;
 
     // couleurs
-    var ink = [28, 34, 43], dim = [110, 116, 128], faint = [150, 156, 168], brass = [201, 136, 90];
+    var ink = [28, 34, 43], dim = [110, 116, 128], faint = [150, 156, 168], brass = [201, 136, 90], link = [33, 82, 150];
 
     // colonnes
     var colDate = marginX, colIn = 252, colOut = 350;
 
     // ----- en-tête : identité + logo -----
     if (logo){
-      try{ doc.addImage(logo, 'PNG', marginX, 40, 54, 54); }catch(e){}
+      try{ doc.addImage(logo, 'PNG', marginX, 40, 56, 56); }catch(e){}
     }
-    var tx = marginX + 70;
+    var tx = marginX + 72;
     doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor.apply(doc, ink);
     doc.text(AUTHOR.name, tx, 56);
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, dim);
     doc.text(AUTHOR.role, tx, 70);
     doc.setFontSize(8.5);
     doc.text(AUTHOR.school, tx, 82);
-    doc.text('Tél. : ' + AUTHOR.phone + '   ·   ' + AUTHOR.email, tx, 94);
-    doc.text(AUTHOR.portfolio + '   ·   ' + AUTHOR.github + '   ·   ' + AUTHOR.linkedin, tx, 106);
 
-    var y = 128;
+    // contacts : icône officielle + texte cliquable, avec retour à la ligne auto
+    var contacts = [
+      { icon:'phone',    label:AUTHOR.phone,     url:'tel:' + AUTHOR.phone.replace(/\s+/g,'') },
+      { icon:'gmail',    label:AUTHOR.email,     url:'mailto:' + AUTHOR.email },
+      { icon:'globe',    label:AUTHOR.portfolio, url:'https://' + AUTHOR.portfolio },
+      { icon:'github',   label:AUTHOR.github,    url:'https://' + AUTHOR.github },
+      { icon:'linkedin', label:AUTHOR.linkedin,  url:'https://' + AUTHOR.linkedin }
+    ];
+    var isz = 9.5, gap = 4, itemGap = 15, lineH = 15;
+    var cx = tx, cy = 96;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    contacts.forEach(function(it){
+      var w = doc.getTextWidth(it.label);
+      var itemW = isz + gap + w;
+      if (cx + itemW > rightX){ cx = tx; cy += lineH; }
+      var img = renderIcon(it.icon);
+      if (img){ try{ doc.addImage(img, 'PNG', cx, cy - isz + 1.5, isz, isz); }catch(e){} }
+      doc.setTextColor.apply(doc, link);
+      doc.textWithLink(it.label, cx + isz + gap, cy, { url: it.url });
+      cx += itemW + itemGap;
+    });
+
+    var y = cy + 18;
     doc.setDrawColor(225); doc.setLineWidth(0.8); doc.line(marginX, y, rightX, y);
     y += 30;
 
